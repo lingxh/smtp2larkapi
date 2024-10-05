@@ -1,4 +1,4 @@
-# SMTP 转 Lark mail API
+# SMTP to Lark mail API
 由于直接使用 Lark 提供的 SMTP 服务会泄漏发送者的 IP 地址，而通过 Lark 提供的发送用户邮件 API 不会包含发送者 IP 地址， 所以诞生了这个项目，原理为提供一个 SMTP 服务器，客户端使用 SMTP 协议发送邮件到此服务端，服务端将邮件发送到 Lark 提供的 API 。
 
 ## 使用方法
