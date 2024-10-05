@@ -36,29 +36,49 @@ cargo build --release
 2. 创建 `config.json` 文件，并按照以下模板写入内容:
 ```json
 {
-    "listener" : "0.0.0.0:587",  // 监听地址
-    "host" : "smtp.gmail.com",   // SMTP 服务器主机名
-    "user": "user",              // SMTP 鉴权用户名
-    "passwd": "password",        // SMTP 鉴权密码
-    "safety": "starttls",        // 加密类型，可选择 no, ssl, starttls 三者之一
-    "tls": {                     // 选填，若 safety 配置为 no 则不需要填写
-        "cert": "data/code.crt", // tls证书
-        "key": "data/code.key"   // tls密钥
+    "listener" : "0.0.0.0:587",
+    "host" : "smtp.gmail.com",
+    "user": "user",
+    "passwd": "password",
+    "safety": "starttls",
+    "tls": {
+        "cert": "data/code.crt",
+        "key": "data/code.key"
     }
 }
 ```
+配置项解释：  
+ `listener`  : 监听地址  
+ `host`      : SMTP 服务器主机名  
+ `user`      : SMTP 鉴权用户名  
+ `passwd`    : SMTP 鉴权密码  
+ `safety`   : 加密类型，可选择 no, ssl, starttls 三者之一  
+ `tls`      : 选填，若 safety 配置为 no 则不需要填写  
+ `cert`     : tls证书  
+ `key`      : tls密钥  
+
+
 3. 创建 `app_info.json` 文件，并按照以下模板写入内容:
 ```json
 {
-    "app_id": "",     // 填写 App ID
-    "app_secret": "", // 填写 App Secret
-    "code": ""        // 填写登录授权码 (此授权码有效期只有5分钟，请获取填入后立即启动一次程序获得长效 Token， 后续若不出现连续30天未运行此程序则不再需要此项)
-
-    // 登录授权码获取方式：
-    // 访问 https://open.larksuite.com/open-apis/authen/v1/authorize?app_id={app_id}&redirect_uri=http://127.0.0.1:11451&scope=mail:user_mailbox.message:send   注意将 {app_id} 替换为你自己的 AppID 
-    // 然后单击授权，会跳转到 http://127.0.0.1:11451 ,复制 URL 上的 code 参数即是登录授权码
+    "app_id": "",
+    "app_secret": "",
+    "code": ""
 }
 ```
+配置项解释：  
+ `app_id`    : App ID    
+ `app_secret`: App Secret  
+ `code`      : 登录授权码  
+ 
+注意：登录授权码有效期只有5分钟，请获取填入后立即启动一次程序获得长效 Token， 后续若不出现连续30天未运行此程序则不再需要此项  
+
+登录授权码获取方式：
+
+访问 https://open.larksuite.com/open-apis/authen/v1/authorize?app_id={app_id}&redirect_uri=http://127.0.0.1:11451&scope=mail:user_mailbox.message:send   
+
+注意将 {app_id} 替换为你自己的 AppID   
+然后单击授权，会跳转到 http://127.0.0.1:11451 ,复制 URL 上的 code 参数即是登录授权码  
 
 4. 运行程序，程序会自动获取 Token，若出现连续30天未运行此程序则 Token 失效，需要重新获取授权码并更新 `app_info.json` 文件。
 
@@ -104,31 +124,54 @@ The built program will be located at `target/smtp2larkapi`.
 2. Create a `config.json` file, and write the content according to the following template:
 ```json
 {
-    "listener": "0.0.0.0:587",   // Listening address
-    "host": "smtp.gmail.com",    // SMTP server hostname
-    "user": "user",              // SMTP authentication username
-    "passwd": "password",        // SMTP authentication password
-    "safety": "starttls",        // Encryption type, choose one of no, ssl, or starttls
-    "tls": {                     // Optional, not required if safety is set to no
-        "cert": "data/code.crt", // TLS certificate
-        "key": "data/code.key"   // TLS private key
+    "listener": "0.0.0.0:587",
+    "host": "smtp.gmail.com",
+    "user": "user",
+    "passwd": "password",
+    "safety": "starttls",
+    "tls": {
+        "cert": "data/code.crt",
+        "key": "data/code.key"
     }
 }
 ```
-3. Create an app_info.json file, and write the content according to the following template:
+Explanation of configuration items:
+
+`listener`: Listening address  
+`host`: SMTP server hostname  
+`user`: SMTP authentication username  
+`passwd`: SMTP authentication password  
+`safety`: Encryption type, options are no, ssl, or starttls  
+`tls`: Optional, not required if safety is set to no  
+`cert`: TLS certificate  
+`key`: TLS private key  
+
+3. Create an `app_info.json` file and write the content according to the following template:
 ```json
 {
-    "app_id": "",     // Enter App ID
-    "app_secret": "", // Enter App Secret
-    "code": ""        // Enter the login authorization code (The authorization code is only valid for 5 minutes. After obtaining and entering it, immediately start the program to acquire a long-term token. If the program is not run for 30 consecutive days, you will need to obtain a new authorization code.)
-
-    // How to obtain the authorization code:
-    // Visit https://open.larksuite.com/open-apis/authen/v1/authorize?app_id={app_id}&redirect_uri=http://127.0.0.1:11451&scope=mail:user_mailbox.message:send  Replace {app_id} with your own AppID
-    // After authorizing, you will be redirected to http://127.0.0.1:11451. Copy the "code" parameter from the URL, which is your authorization code.
+    "app_id": "",
+    "app_secret": "",
+    "code": ""
 }
 ```
+Explanation of configuration items:
+
+`app_id`: App ID  
+`app_secret`: App Secret  
+`code`: Login authorization code  
+
+Note: The login authorization code is only valid for 5 minutes. After obtaining and entering it, immediately start the program once to acquire a long-term token. If the program is run regularly, you won't need this again unless you skip running it for 30 consecutive days.
+
+How to obtain the login authorization code:
+
+Visit https://open.larksuite.com/open-apis/authen/v1/authorize?app_id={app_id}&redirect_uri=http://127.0.0.1:11451&scope=mail:user_mailbox.message:send
+
+Replace `{app_id}` with your App ID. After authorization, it will redirect to http://127.0.0.1:11451. Copy the code parameter from the URL, which is your login authorization code.
+
+
+
 4. Run the program. It will automatically acquire the Token. If the program is not run for 30 consecutive days, the token will expire, and you'll need to obtain a new authorization code and update the `app_info.json` file.
 
 ## Finally
-If this project helped you, please give it a star; I would greatly appreciate it! 
+If this project helped you, please give it a star; I would greatly appreciate it!   
 If you encounter any issues while running this project or have any suggestions for improvement, feel free to open an issue.
