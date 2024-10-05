@@ -2,6 +2,28 @@
 由于直接使用 Lark 提供的 SMTP 服务会泄漏发送者的 IP 地址，而通过 Lark 提供的发送用户邮件 API 不会包含发送者 IP 地址， 所以诞生了这个项目，原理为提供一个 SMTP 服务器，客户端使用 SMTP 协议发送邮件到此服务端，服务端将邮件发送到 Lark 提供的 API 。
 
 ## 使用方法
+### 构建
+1. 安装 Rust [https://www.rust-lang.org/zh-CN/tools/install](https://www.rust-lang.org/zh-CN/tools/install)
+2. 安装依赖包
+```bash
+# Ubuntu / Debian
+sudo apt install pkg-config
+
+# Fedora / CentOS / RHEL
+sudo dnf install pkg-config
+
+# Windows
+scoop install pkg-config
+```
+3. 拉取源代码并构建
+```bash
+git clone https://github.com/lingxh/smtp2larkapi
+cd smtp2larkapi
+cargo build --release
+```
+构建完成后的程序位于 `target/smtp2larkapi`
+
+
 ### 创建 Lark App
 1. 前往 [https://open.larksuite.com/](https://open.larksuite.com/) 创建一个企业自建应用，应用名称和信息随便填写
 2. 开发配置 - 权限管理 - API 权限,  搜索 `mail:user_mailbox.message:send` 并勾选
@@ -49,6 +71,26 @@
 Since directly using Lark's SMTP service exposes the sender's IP address, while sending emails through Lark's Mail API does not include the sender's IP, this project was created. The principle is to provide an SMTP server that accepts emails sent via SMTP protocol from the client, and then the server sends those emails to Lark's API.
 
 ## How to Use
+### Build
+1. Install Rust [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
+2. Install dependencies
+```bash
+# Ubuntu / Debian
+sudo apt install pkg-config git
+
+# Fedora / CentOS / RHEL
+sudo dnf install pkg-config git
+
+# Windows
+scoop install pkg-config git
+```
+3. Build
+```bash
+git clone https://github.com/lingxh/smtp2larkapi
+cd smtp2larkapi
+cargo build --release
+```
+The built program will be located at `target/smtp2larkapi`. 
 
 ### Create a Lark App
 1. Go to [https://open.larksuite.com/](https://open.larksuite.com/) and create an enterprise self-built application. You can fill in any application name and details.
