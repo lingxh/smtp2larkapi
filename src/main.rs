@@ -1,14 +1,14 @@
+use chrono::Local;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use smtp2larkapi::{lark_api_mail, smtp_server::*};
-use tokio::sync::RwLock;
-use std::sync::Arc;
-use smtp2larkapi::tools::*;
 use serde::{Deserialize, Serialize};
-use chrono::Local;
+use smtp2larkapi::tools::*;
+use smtp2larkapi::{lark_api_mail, smtp_server::*};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Deserialize, Serialize)]
-struct Tls{
+struct Tls {
     cert: String,
     key: String,
 }
@@ -28,8 +28,6 @@ async fn main() -> Result<(), anyhow::Error> {
     let config_json = read_json("data/config.json")?;
     let config: Config = serde_json::from_value(config_json)?;
 
-
-    
     let listener = tokio::net::TcpListener::bind(&config.listener).await?;
     println!("Listening on {}", listener.local_addr()?);
 
@@ -54,7 +52,7 @@ async fn main() -> Result<(), anyhow::Error> {
         user: config.user.clone(),
         passwd: config.passwd.clone(),
         tls_cert: tls_cert.clone(),
-        tls_type: match config.safety.as_str(){
+        tls_type: match config.safety.as_str() {
             "starttls" => Some(TlsType::STARTTLS),
             "ssl" => Some(TlsType::SSL),
             _ => None,
@@ -64,9 +62,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let lark = lark_api_mail::LarkMail::new().await?;
     let lark = Arc::new(RwLock::new(lark));
-    
+
     loop {
-        
         let lark = lark.clone();
         let mail_config = mail_config.clone();
         let (mut stream, _) = listener.accept().await?;
@@ -77,15 +74,31 @@ async fn main() -> Result<(), anyhow::Error> {
                 Ok(_) => {
                     let Mail { mail_data, .. } = mail;
                     let mail_to = mail_data.to.clone();
-                    println!("{}  Received an email request to send: {:?}", Local::now().format("%Y/%m/%d %H:%M:%S").to_string(), &mail_to);
-                    match lark.write().await.send_mail(mail_data).await{
-                        Ok(_) => println!("{}  to: {:?} send success", Local::now().format("%Y/%m/%d %H:%M:%S").to_string(), &mail_to),
-                        Err(e) => println!("{}  to:{:?}  {}", Local::now().format("%Y/%m/%d %H:%M:%S").to_string(), &mail_to ,e.to_string()),
+                    println!(
+                        "{}  Received an email request to send: {:?}",
+                        Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                        &mail_to
+                    );
+                    match lark.write().await.send_mail(mail_data).await {
+                        Ok(_) => println!(
+                            "{}  to: {:?} send success",
+                            Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                            &mail_to
+                        ),
+                        Err(e) => println!(
+                            "{}  to:{:?}  {}",
+                            Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                            &mail_to,
+                            e.to_string()
+                        ),
                     };
                 }
-                Err(e) => println!("{} Error: {}", Local::now().format("%Y/%m/%d %H:%M:%S").to_string() ,e),
+                Err(e) => println!(
+                    "{} Error: {}",
+                    Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                    e
+                ),
             }
-
         });
     }
 }

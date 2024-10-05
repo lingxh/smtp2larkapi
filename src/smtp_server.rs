@@ -1,13 +1,13 @@
 use anyhow::anyhow;
 use base64::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::RwLock;
-use tokio_rustls::{rustls, TlsAcceptor};
-use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
-use std::time::Duration;
+use tokio_rustls::{rustls, TlsAcceptor};
 
 pub struct Mail<S>
 where
@@ -30,11 +30,10 @@ pub struct MailData {
     pub body: String,
 }
 
-#[derive(Debug, Clone)]
-#[derive(Deserialize, Serialize)]
-pub struct To{
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct To {
     pub mail_address: String,
-    pub name: String
+    pub name: String,
 }
 
 pub struct MailConfig {
@@ -51,13 +50,12 @@ pub enum TlsType {
     SSL,
 }
 
-
 struct Status {
     has_tls: bool,
     auth: bool,
     quit: bool,
     starttls: bool,
-    data: bool
+    data: bool,
 }
 pub fn auth_str(user: &str, password: &str) -> String {
     BASE64_STANDARD.encode(format!("\x00{}\x00{}", user, password))
@@ -83,12 +81,11 @@ where
                 auth: false,
                 quit: false,
                 starttls: false,
-                data: false
+                data: false,
             },
             tls_cert: config.tls_cert.clone(),
             tls_type: config.tls_type.clone(),
         }
-        
     }
 }
 
@@ -96,67 +93,6 @@ impl<S> Mail<S>
 where
     S: AsyncReadExt + AsyncWriteExt + Sync + Send + Unpin,
 {
-    async fn scheduler(&mut self, request: &str) -> Result<String, anyhow::Error> {
-        let handle = if self.status.data {
-            "DATA".to_string()
-        } else {
-            request
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_uppercase()
-        };
-
-        let response: Result<String, anyhow::Error> = match handle.as_str() {
-            "HELO" | "EHLO" => self.helo().await,
-            "STARTTLS" => self.starttls().await,
-            "MAIL" => self.mail(&request).await,
-            "RCPT" => self.rcpt(&request).await,
-            "DATA" => self.data(&request).await,
-            "QUIT" => self.quit().await,
-            "AUTH" => self.auth(&request).await,
-            _ => Err(anyhow!("500 Unknown command")),
-        };
-
-        response
-    }
-
-    async fn io<IO>(&mut self, mut reader: IO) -> Result<(), anyhow::Error>
-    where
-        IO: AsyncBufReadExt + AsyncWriteExt + Sync + Send + Unpin,
-    {
-        if !self.status.has_tls
-            || self.tls_type.is_some() && *self.tls_type.as_ref().unwrap() == TlsType::SSL
-        {
-            reader
-                .write_all(format!("220 {} Esmtp smtp2larkapi\r\n", &self.host).as_bytes())
-                .await?;
-        }
-        loop {
-            let mut request = String::new();
-            timeout(Duration::from_secs(10),reader.read_line(&mut request)).await??;
-            match self.scheduler(&request).await {
-                Ok(response) => {
-                    if response.len() != 0 {
-                        reader.write_all(response.as_bytes()).await?;
-                        if self.status.quit {
-                            break;
-                        }
-                        if self.status.starttls {
-                            self.status.starttls = false;
-                            break;
-                        }
-                    }
-                }
-                Err(e) => {
-                    reader.write_all(e.to_string().as_bytes()).await?;
-                    return Err(e);
-                }
-            }
-        }
-        Ok(())
-    }
-
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
         for i in 0..2 {
             if self.tls_type.is_some() && *self.tls_type.as_ref().unwrap() == TlsType::SSL && i == 0
@@ -184,6 +120,67 @@ where
             }
         }
         Ok(())
+    }
+
+    async fn io<IO>(&mut self, mut reader: IO) -> Result<(), anyhow::Error>
+    where
+        IO: AsyncBufReadExt + AsyncWriteExt + Sync + Send + Unpin,
+    {
+        if !self.status.has_tls
+            || self.tls_type.is_some() && *self.tls_type.as_ref().unwrap() == TlsType::SSL
+        {
+            reader
+                .write_all(format!("220 {} Esmtp smtp2larkapi\r\n", &self.host).as_bytes())
+                .await?;
+        }
+        loop {
+            let mut request = String::new();
+            timeout(Duration::from_secs(10), reader.read_line(&mut request)).await??;
+            match self.scheduler(&request).await {
+                Ok(response) => {
+                    if response.len() != 0 {
+                        reader.write_all(response.as_bytes()).await?;
+                        if self.status.quit {
+                            break;
+                        }
+                        if self.status.starttls {
+                            self.status.starttls = false;
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    reader.write_all(e.to_string().as_bytes()).await?;
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn scheduler(&mut self, request: &str) -> Result<String, anyhow::Error> {
+        let handle = if self.status.data {
+            "DATA".to_string()
+        } else {
+            request
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_uppercase()
+        };
+
+        let response: Result<String, anyhow::Error> = match handle.as_str() {
+            "HELO" | "EHLO" => self.helo().await,
+            "STARTTLS" => self.starttls().await,
+            "MAIL" => self.mail(&request).await,
+            "RCPT" => self.rcpt(&request).await,
+            "DATA" => self.data(&request).await,
+            "QUIT" => self.quit().await,
+            "AUTH" => self.auth(&request).await,
+            _ => Err(anyhow!("500 Unknown command")),
+        };
+
+        response
     }
 
     async fn helo(&self) -> Result<String, anyhow::Error> {
@@ -215,7 +212,10 @@ where
             return Err(anyhow!("500"));
         }
         let to = &request[left_index..right_index];
-        self.mail_data.to.push(To { mail_address: to.to_string(), name: "".to_string() });
+        self.mail_data.to.push(To {
+            mail_address: to.to_string(),
+            name: "".to_string(),
+        });
 
         Ok("250 OK\r\n".to_string())
     }

@@ -264,7 +264,7 @@ async fn timing_update(
                     drop(app_token);
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(600)).await; 
+            tokio::time::sleep(std::time::Duration::from_secs(600)).await;
         }
     }
 }
@@ -324,7 +324,7 @@ impl LarkMail {
         tokio::spawn(async move {
             timing_update(user_token_clone, app_token_clone, app_info_clone).await;
         });
-        
+
         Ok(LarkMail {
             app_info: app_info,
             user_token: user_token.clone(),
