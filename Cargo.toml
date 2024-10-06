@@ -15,3 +15,10 @@ mail-parser = "0.9.4"
 serde = { version = "1.0", features = ["derive"] }
 chrono = "0.4.38"
 rustls = "0.23.14"
+
+[profile.release]
+lto = true
+opt-level = "s"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
