@@ -5,6 +5,8 @@ use base64::engine::general_purpose::URL_SAFE;
 use base64::prelude::*;
 use chrono::Local;
 use mail_parser::*;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
@@ -35,6 +37,7 @@ pub struct LarkMail {
     app_info: AppInfo,
     app_token: Arc<RwLock<AppToken>>,
     user_token: Arc<RwLock<UserToken>>,
+    http_client: Arc<RwLock<ClientWithMiddleware>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -43,8 +46,13 @@ struct Attachment {
     filename: String,
 }
 
-async fn fetch_app_token(app_info: &AppInfo) -> Result<AppToken, anyhow::Error> {
-    let res = reqwest::Client::new()
+async fn fetch_app_token(
+    app_info: &AppInfo,
+    client: Arc<RwLock<ClientWithMiddleware>>,
+) -> Result<AppToken, anyhow::Error> {
+    let res = client
+        .write()
+        .await
         .post("https://open.larksuite.com/open-apis/auth/v3/app_access_token/internal")
         .header("Content-Type", "application/json; charset=utf-8")
         .body(format!(
@@ -84,9 +92,15 @@ async fn fetch_app_token(app_info: &AppInfo) -> Result<AppToken, anyhow::Error> 
     })
 }
 
-async fn fetch_user_token(app_token: &AppToken, code: &str) -> Result<UserToken, anyhow::Error> {
+async fn fetch_user_token(
+    app_token: &AppToken,
+    code: &str,
+    client: Arc<RwLock<ClientWithMiddleware>>,
+) -> Result<UserToken, anyhow::Error> {
     let error_mag = "fetch_user_token: Unable to parse Lark response JSON";
-    let res = reqwest::Client::new()
+    let res = client
+        .write()
+        .await
         .post("https://open.larksuite.com/open-apis/authen/v1/oidc/access_token")
         .header("Content-Type", "application/json; charset=utf-8")
         .header("Authorization", "Bearer ".to_string() + &app_token.token)
@@ -151,9 +165,12 @@ async fn fetch_user_token(app_token: &AppToken, code: &str) -> Result<UserToken,
 async fn fetch_user_token_refresh(
     app_token: &AppToken,
     user_token: &UserToken,
+    client: Arc<RwLock<ClientWithMiddleware>>,
 ) -> Result<UserToken, anyhow::Error> {
     let error_mag = "fetch_user_token_refresh: Unable to parse Lark response JSON";
-    let res = reqwest::Client::new()
+    let res = client
+        .write()
+        .await
         .post("https://open.larksuite.com/open-apis/authen/v1/oidc/refresh_access_token")
         .header("Content-Type", "application/json; charset=utf-8")
         .header("Authorization", "Bearer ".to_string() + &app_token.token)
@@ -223,6 +240,7 @@ async fn check_token_expires(
     uesr_token: &mut UserToken,
     app_token: &mut AppToken,
     app_info: &AppInfo,
+    client: Arc<RwLock<ClientWithMiddleware>>,
 ) -> Result<(), anyhow::Error> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -230,12 +248,12 @@ async fn check_token_expires(
         .as_secs();
 
     if app_token.token_expires < now {
-        let new = fetch_app_token(app_info).await?;
+        let new = fetch_app_token(app_info, client.clone()).await?;
         *app_token = new;
     }
 
     if uesr_token.access_token_expires < now || uesr_token.refresh_token_expires < now {
-        let new = fetch_user_token_refresh(app_token, uesr_token).await?;
+        let new = fetch_user_token_refresh(app_token, uesr_token, client.clone()).await?;
         *uesr_token = new;
     }
     Ok(())
@@ -245,6 +263,7 @@ async fn timing_update(
     uesr_token: Arc<RwLock<UserToken>>,
     app_token: Arc<RwLock<AppToken>>,
     app_info: AppInfo,
+    client: Arc<RwLock<ClientWithMiddleware>>,
 ) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(3600 * 24)).await;
@@ -252,7 +271,9 @@ async fn timing_update(
             use std::result::Result::Ok;
             let mut user_token = uesr_token.write().await;
             let mut app_token = app_token.write().await;
-            match check_token_expires(&mut *user_token, &mut *app_token, &app_info).await {
+            match check_token_expires(&mut *user_token, &mut *app_token, &app_info, client.clone())
+                .await
+            {
                 Ok(_) => break,
                 Err(e) => {
                     println!(
@@ -286,7 +307,14 @@ impl LarkMail {
 
         let code = app_info_config["code"].as_str();
 
-        let app_token = fetch_app_token(&app_info).await?;
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+        let client = Arc::new(RwLock::new(
+            ClientBuilder::new(reqwest::Client::new())
+                .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+                .build(),
+        ));
+
+        let app_token = fetch_app_token(&app_info, client.clone()).await?;
 
         let user_token = if code.is_some() && code.unwrap().len() > 0 {
             let code = code.unwrap();
@@ -297,7 +325,7 @@ impl LarkMail {
                     "app_secret": app_info.app_secret,
                 }),
             )?;
-            fetch_user_token(&app_token, code).await?
+            fetch_user_token(&app_token, code, client.clone()).await?
         } else {
             let error_mag = "Unable to parse json from refresh_token.json, please re-fill the code at app_info.json to get the token.";
             let json = read_json("data/refresh_token.json")?;
@@ -313,7 +341,7 @@ impl LarkMail {
                 .to_string();
             uesr_token.refresh_token_expires =
                 json["expires"].as_u64().ok_or(anyhow!(error_mag))?;
-            fetch_user_token_refresh(&app_token, &uesr_token).await?
+            fetch_user_token_refresh(&app_token, &uesr_token, client.clone()).await?
         };
 
         let app_token = Arc::new(RwLock::new(app_token));
@@ -322,14 +350,22 @@ impl LarkMail {
         let app_token_clone = app_token.clone();
         let user_token_clone = user_token.clone();
         let app_info_clone = app_info.clone();
+        let http_client_clone = client.clone();
         tokio::spawn(async move {
-            timing_update(user_token_clone, app_token_clone, app_info_clone).await;
+            timing_update(
+                user_token_clone,
+                app_token_clone,
+                app_info_clone,
+                http_client_clone,
+            )
+            .await;
         });
 
         Ok(LarkMail {
             app_info: app_info,
             user_token: user_token.clone(),
             app_token: app_token.clone(),
+            http_client: client,
         })
     }
 
@@ -407,8 +443,17 @@ impl LarkMail {
             json["attachments"] = serde_json::to_value(&attachments)?;
         }
 
-        check_token_expires(user_token, app_token, &self.app_info).await?;
-        let res = reqwest::Client::new()
+        check_token_expires(
+            user_token,
+            app_token,
+            &self.app_info,
+            self.http_client.clone(),
+        )
+        .await?;
+        let res = self
+            .http_client
+            .write()
+            .await
             .post("https://open.larksuite.com/open-apis/mail/v1/user_mailboxes/me/messages/send")
             .header("Content-Type", "application/json; charset=utf-8")
             .header(
