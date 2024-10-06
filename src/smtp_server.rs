@@ -191,7 +191,7 @@ where
         if !self.status.auth {
             return Err(anyhow!("Client is not authenticated"));
         }
-        let left_index = request.find("<").expect("500") + 1;
+        let left_index = request.find("<").ok_or(anyhow!("500 Unable to parse content\r\n"))? + 1;
         let right_index = request.len() - 3;
         if right_index - left_index < 1 {
             return Err(anyhow!("500"));
@@ -206,7 +206,7 @@ where
         if !self.status.auth {
             return Err(anyhow!("Client is not authenticated"));
         }
-        let left_index = request.find("<").expect("500") + 1;
+        let left_index = request.find("<").ok_or(anyhow!("500 Unable to parse content\r\n"))? + 1;
         let right_index = request.len() - 3;
         if right_index - left_index < 1 {
             return Err(anyhow!("500"));
