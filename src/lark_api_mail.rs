@@ -288,7 +288,8 @@ impl LarkMail {
 
         let app_token = fetch_app_token(&app_info).await?;
 
-        let user_token = if let Some(code) = code {
+        let user_token = if code.is_some() && code.unwrap().len() > 0 {
+            let code = code.unwrap();
             write_json(
                 "data/app_info.json",
                 &json!({
