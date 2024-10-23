@@ -15,11 +15,13 @@ where
 {
     pub mail_data: MailData,
     host: String,
+    user: String,
+    passwd: String,
     stream: Arc<RwLock<S>>,
-    auth_str: String,
     status: Status,
     tls_type: Option<TlsType>,
     tls_cert: Option<Arc<rustls::ServerConfig>>,
+    auth_type: String,
 }
 
 #[derive(Debug)]
@@ -55,7 +57,15 @@ struct Status {
     auth: bool,
     quit: bool,
     starttls: bool,
-    data: bool,
+    auth_login_begin: bool,
+    lock: LockMode,
+}
+
+#[derive(PartialEq)]
+enum LockMode {
+    NULL,
+    DATA,
+    AUTH,
 }
 pub fn auth_str(user: &str, password: &str) -> String {
     BASE64_STANDARD.encode(format!("\x00{}\x00{}", user, password))
@@ -74,17 +84,20 @@ where
                 body: String::new(),
             },
             host: config.host.clone(),
+            user: config.user.clone(),
+            passwd: config.passwd.clone(),
             stream: Arc::new(RwLock::new(stream)),
-            auth_str: auth_str(&config.user, &config.passwd),
             status: Status {
                 has_tls: false,
                 auth: false,
                 quit: false,
                 starttls: false,
-                data: false,
+                auth_login_begin: false,
+                lock: LockMode::NULL,
             },
             tls_cert: config.tls_cert.clone(),
             tls_type: config.tls_type.clone(),
+            auth_type: "".to_string(),
         }
     }
 }
@@ -159,14 +172,14 @@ where
     }
 
     async fn scheduler(&mut self, request: &str) -> Result<String, anyhow::Error> {
-        let handle = if self.status.data {
-            "DATA".to_string()
-        } else {
-            request
+        let handle = match self.status.lock {
+            LockMode::NULL => request
                 .split_whitespace()
                 .next()
                 .unwrap_or("")
-                .to_uppercase()
+                .to_uppercase(),
+            LockMode::DATA => "DATA".to_string(),
+            LockMode::AUTH => "AUTH".to_string(),
         };
 
         let response: Result<String, anyhow::Error> = match handle.as_str() {
@@ -184,19 +197,25 @@ where
     }
 
     async fn helo(&self) -> Result<String, anyhow::Error> {
-        let tls = if self.tls_type.is_some() && *self.tls_type.as_ref().unwrap() == TlsType::STARTTLS && !self.status.has_tls {
+        let tls = if self.tls_type.is_some()
+            && *self.tls_type.as_ref().unwrap() == TlsType::STARTTLS
+            && !self.status.has_tls
+        {
             "250-STARTTLS\r\n"
         } else {
             ""
         };
-        Ok(format!("250-{}\r\n250-PIPELINING\r\n250-SIZE 73400320\r\n{}250-AUTH PLAIN\r\n250-SMTPUTF8\r\n250 8BITMIME\r\n", &self.host, tls))
+        Ok(format!("250-{}\r\n250-PIPELINING\r\n250-SIZE 73400320\r\n{}250-AUTH LOGIN PLAIN\r\n250-AUTH=LOGIN\r\n250-SMTPUTF8\r\n250 8BITMIME\r\n", &self.host, tls))
     }
 
     async fn mail(&mut self, request: &str) -> Result<String, anyhow::Error> {
         if !self.status.auth {
             return Err(anyhow!("Client is not authenticated"));
         }
-        let left_index = request.find("<").ok_or(anyhow!("500 Unable to parse content\r\n"))? + 1;
+        let left_index = request
+            .find("<")
+            .ok_or(anyhow!("500 Unable to parse content\r\n"))?
+            + 1;
         let right_index = request.len() - 3;
         if right_index - left_index < 1 {
             return Err(anyhow!("500"));
@@ -211,7 +230,10 @@ where
         if !self.status.auth {
             return Err(anyhow!("Client is not authenticated"));
         }
-        let left_index = request.find("<").ok_or(anyhow!("500 Unable to parse content\r\n"))? + 1;
+        let left_index = request
+            .find("<")
+            .ok_or(anyhow!("500 Unable to parse content\r\n"))?
+            + 1;
         let right_index = request.len() - 3;
         if right_index - left_index < 1 {
             return Err(anyhow!("500"));
@@ -230,11 +252,11 @@ where
             return Err(anyhow!("Client is not authenticated"));
         }
         if request == ".\r\n" {
-            self.status.data = false;
+            self.status.lock = LockMode::NULL;
             return Ok("250 OK\r\n".to_string());
         }
 
-        if self.status.data {
+        if self.status.lock == LockMode::DATA {
             if request == "..\r\n" {
                 self.mail_data.body += ".\r\n"
             } else {
@@ -244,7 +266,7 @@ where
             return Ok(String::new());
         }
 
-        self.status.data = true;
+        self.status.lock = LockMode::DATA;
         Ok("354 Start mail input; end with <CRLF>.<CRLF>\r\n".to_string())
     }
 
@@ -257,17 +279,57 @@ where
         if self.tls_type.is_some() && !self.status.has_tls {
             return Err(anyhow!("530 5.7.0 Must issue a STARTTLS command first\r\n"));
         }
+
         let args = request.split(" ").collect::<Vec<_>>();
-        let auth_str = args
-            .get(2)
-            .ok_or(anyhow!(
-                "500 The authentication text format is incorrect.\r\n"
-            ))?
-            .trim_end();
-        if auth_str == &self.auth_str {
-            self.status.auth = true;
-            return Ok("235 Authentication successful\r\n".to_string());
+
+        if self.auth_type.len() == 0 {
+            self.auth_type = args
+                .get(1)
+                .ok_or(anyhow!("500 The authentication type is incorrect.\r\n"))?
+                .trim_end()
+                .to_string();
         }
+
+        match self.auth_type.to_uppercase().as_str() {
+            "PLAIN" => {
+                let auth_plain = if let Some(auth_plain) = args.get(2) {
+                    auth_plain.trim_end()
+                } else {
+                    if self.status.lock == LockMode::AUTH {
+                        self.status.lock = LockMode::NULL;
+                        request.trim_end()
+                    } else {
+                        self.status.lock = LockMode::AUTH;
+                        return Ok("334 \r\n".to_string());
+                    }
+                };
+                if auth_plain == auth_str(&self.user, &self.passwd) {
+                    self.status.auth = true;
+                    return Ok("235 Authentication successful\r\n".to_string());
+                }
+            }
+            "LOGIN" => {
+                if self.status.lock == LockMode::NULL && !self.status.auth_login_begin {
+                    self.status.lock = LockMode::AUTH;
+                    self.status.auth_login_begin = true;
+                    return Ok("334 VXNlcm5hbWU6\r\n".to_string());
+                } else if self.status.auth_login_begin
+                    && request.trim_end() == BASE64_STANDARD.encode(&self.user)
+                {
+                    self.status.auth_login_begin = false;
+                    return Ok("334 UGFzc3dvcmQ6\r\n".to_string());
+                } else if request.trim_end() == BASE64_STANDARD.encode(&self.passwd) {
+                    self.status.auth = true;
+                    self.status.lock = LockMode::NULL;
+                    return Ok("235 Authentication successful\r\n".to_string());
+                }
+            }
+            _ => {
+                self.status.quit = true;
+                return Err(anyhow!("500 The authentication type is incorrect.\r\n"));
+            }
+        };
+
         self.status.quit = true;
         return Err(anyhow!("535 Authentication failed\r\n".to_string()));
     }
