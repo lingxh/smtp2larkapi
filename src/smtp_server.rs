@@ -184,7 +184,12 @@ where
     }
 
     async fn helo(&self) -> Result<String, anyhow::Error> {
-        Ok(format!("250-{}\r\n250-PIPELINING\r\n250-SIZE 73400320\r\n250-STARTTLS\r\n250-AUTH PLAIN\r\n250-SMTPUTF8\r\n250 8BITMIME\r\n", &self.host))
+        let tls = if self.tls_type.is_some() && *self.tls_type.as_ref().unwrap() == TlsType::STARTTLS && !self.status.has_tls {
+            "250-STARTTLS\r\n"
+        } else {
+            ""
+        };
+        Ok(format!("250-{}\r\n250-PIPELINING\r\n250-SIZE 73400320\r\n{}250-AUTH PLAIN\r\n250-SMTPUTF8\r\n250 8BITMIME\r\n", &self.host, tls))
     }
 
     async fn mail(&mut self, request: &str) -> Result<String, anyhow::Error> {
