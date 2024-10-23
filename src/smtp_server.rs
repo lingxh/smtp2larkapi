@@ -67,7 +67,7 @@ enum LockMode {
     DATA,
     AUTH,
 }
-pub fn auth_str(user: &str, password: &str) -> String {
+pub fn plain_encode(user: &str, password: &str) -> String {
     BASE64_STANDARD.encode(format!("\x00{}\x00{}", user, password))
 }
 
@@ -280,20 +280,22 @@ where
             return Err(anyhow!("530 5.7.0 Must issue a STARTTLS command first\r\n"));
         }
 
-        let args = request.split(" ").collect::<Vec<_>>();
-
-        if self.auth_type.len() == 0 {
+        let args = if self.status.lock == LockMode::NULL {
+            let args = request.split(" ").collect::<Vec<_>>();
             self.auth_type = args
                 .get(1)
                 .ok_or(anyhow!("500 The authentication type is incorrect.\r\n"))?
                 .trim_end()
                 .to_string();
-        }
+            Some(args)
+        } else {
+            None
+        };
 
         match self.auth_type.to_uppercase().as_str() {
             "PLAIN" => {
-                let auth_plain = if let Some(auth_plain) = args.get(2) {
-                    auth_plain.trim_end()
+                let auth_plain = if args.is_some() && args.as_ref().unwrap().len() == 3 {
+                    args.unwrap()[2].trim_end()
                 } else {
                     if self.status.lock == LockMode::AUTH {
                         self.status.lock = LockMode::NULL;
@@ -303,7 +305,7 @@ where
                         return Ok("334 \r\n".to_string());
                     }
                 };
-                if auth_plain == auth_str(&self.user, &self.passwd) {
+                if auth_plain == plain_encode(&self.user, &self.passwd) {
                     self.status.auth = true;
                     return Ok("235 Authentication successful\r\n".to_string());
                 }

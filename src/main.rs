@@ -95,7 +95,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
                 Err(e) => println!(
                     "{} Error: {}",
-                    Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                    Local::now().format("%Y/%m/%d %H:%M:%S").to_string().trim_end(),
                     e
                 ),
             }
