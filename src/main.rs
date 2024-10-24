@@ -77,18 +77,18 @@ async fn main() -> Result<(), anyhow::Error> {
                     println!(
                         "{}  Received an email request to send: {:?}",
                         Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
-                        &mail_to
+                        &mail_to.iter().map(|x| x.mail_address.clone()).collect::<Vec<_>>()
                     );
                     match lark.write().await.send_mail(mail_data).await {
                         Ok(_) => println!(
                             "{}  to: {:?} send success",
                             Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
-                            &mail_to
+                            &mail_to.iter().map(|x| x.mail_address.clone()).collect::<Vec<_>>()
                         ),
                         Err(e) => println!(
                             "{}  to:{:?}  {}",
                             Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
-                            &mail_to,
+                            &mail_to.iter().map(|x| x.mail_address.clone()).collect::<Vec<_>>(),
                             e.to_string()
                         ),
                     };

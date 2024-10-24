@@ -27,13 +27,13 @@ where
 #[derive(Debug)]
 pub struct MailData {
     pub from: String,
-    pub to: Vec<To>,
+    pub to: Vec<Addr>,
     pub subject: String,
     pub body: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct To {
+pub struct Addr {
     pub mail_address: String,
     pub name: String,
 }
@@ -239,7 +239,7 @@ where
             return Err(anyhow!("500"));
         }
         let to = &request[left_index..right_index];
-        self.mail_data.to.push(To {
+        self.mail_data.to.push(Addr {
             mail_address: to.to_string(),
             name: "".to_string(),
         });

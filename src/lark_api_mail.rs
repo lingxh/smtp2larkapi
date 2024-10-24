@@ -1,4 +1,4 @@
-use crate::smtp_server::MailData;
+use crate::smtp_server::{Addr, MailData};
 use crate::tools::*;
 use anyhow::anyhow;
 use base64::engine::general_purpose::URL_SAFE;
@@ -290,6 +290,107 @@ async fn timing_update(
     }
 }
 
+fn parser(mail_data: MailData) -> Result<String, anyhow::Error> {
+    let message = MessageParser::default()
+        .parse(&mail_data.body)
+        .ok_or(anyhow!("Failed to parse the email content"))?;
+
+    let mut name = String::new();
+    if let Some(from) = message.from() {
+        if let Some(from) = from.first() {
+            name = from.name().unwrap_or("").to_string();
+        }
+    }
+    let mut cc = Vec::new();
+    let mut bcc = Vec::new();
+
+    if let Some(body_cc) = message.cc() {
+        for addr in body_cc.clone().into_list() {
+            cc.push(Addr {
+                mail_address: addr.address().unwrap_or_default().to_string(),
+                name: addr.name().unwrap_or_default().to_string(),
+            });
+        }
+    }
+
+    if let Some(body_bcc) = message.bcc() {
+        for addr in body_bcc.clone().into_list() {
+            bcc.push(Addr {
+                mail_address: addr.address().unwrap_or_default().to_string(),
+                name: addr.name().unwrap_or_default().to_string(),
+            });
+        }
+    }
+
+    let mut json = serde_json::json!({
+        "subject": message.subject().unwrap_or(""),
+        "to": mail_data.to,
+        "head_from" : json!({
+            "name": name
+        }),
+    });
+
+    if cc.len() != 0 {
+        json["cc"] = serde_json::to_value(&cc)?;
+    }
+    if bcc.len() != 0 {
+        json["bcc"] = serde_json::to_value(&bcc)?;
+    }
+
+    let mut html = String::new();
+    let mut attachments = Vec::new();
+
+    if let Some(body_html) = message.body_html(0) {
+        html = body_html.to_string();
+    };
+
+    for attachment in message.attachments() {
+        if attachment.content_disposition().is_some()
+            && attachment.content_disposition().unwrap().ctype() == "inline"
+        {
+            if attachment.content_type().is_none() {
+                continue;
+            }
+            let content_type = attachment.content_type().unwrap();
+            if content_type.c_subtype.is_none() {
+                continue;
+            }
+            let ctype = format!(
+                "{}/{}",
+                content_type.c_type.to_string(),
+                content_type.c_subtype.as_ref().unwrap().to_string()
+            );
+            if attachment.content_id().is_none() {
+                continue;
+            }
+            html = html.replace(
+                &format!("cid:{}", attachment.content_id().unwrap()),
+                &format!(
+                    "data:{};base64,{}",
+                    ctype,
+                    BASE64_STANDARD.encode(attachment.contents())
+                ),
+            )
+        } else {
+            let filename = attachment.attachment_name().unwrap_or("未知");
+            attachments.push(Attachment {
+                body: URL_SAFE.encode(attachment.contents()),
+                filename: filename.to_string(),
+            });
+        }
+    }
+
+    if html.len() != 0 {
+        json["body_html"] = html.into();
+    }
+
+    if attachments.len() != 0 {
+        json["attachments"] = serde_json::to_value(&attachments)?;
+    }
+
+    Ok(json.to_string())
+}
+
 impl LarkMail {
     pub async fn new() -> Result<Self, anyhow::Error> {
         let error_msg = "Unable to parse json from app_info.json";
@@ -372,76 +473,7 @@ impl LarkMail {
     pub async fn send_mail(&mut self, mail_data: MailData) -> Result<(), anyhow::Error> {
         let user_token = &mut *self.user_token.write().await;
         let app_token = &mut *self.app_token.write().await;
-
-        let message = MessageParser::default()
-            .parse(&mail_data.body)
-            .ok_or(anyhow!("Failed to parse the email content"))?;
-
-        let mut name = String::new();
-        if let Some(from) = message.from() {
-            if let Some(from) = from.first() {
-                name = from.name().unwrap_or("").to_string();
-            }
-        }
-
-        let mut json = serde_json::json!({
-            "subject": message.subject().unwrap_or(""),
-            "to": mail_data.to,
-            "head_from" : json!({
-                "name": name
-            }),
-        });
-
-        let mut html = String::new();
-        let mut attachments = Vec::new();
-
-        if let Some(body_html) = message.body_html(0) {
-            html = body_html.to_string();
-        };
-
-        for attachment in message.attachments() {
-            if attachment.content_disposition().is_some()
-                && attachment.content_disposition().unwrap().ctype() == "inline"
-            {
-                if attachment.content_type().is_none() {
-                    continue;
-                }
-                let content_type = attachment.content_type().unwrap();
-                if content_type.c_subtype.is_none() {
-                    continue;
-                }
-                let ctype = format!(
-                    "{}/{}",
-                    content_type.c_type.to_string(),
-                    content_type.c_subtype.as_ref().unwrap().to_string()
-                );
-                if attachment.content_id().is_none() {
-                    continue;
-                }
-                html = html.replace(
-                    &format!("cid:{}", attachment.content_id().unwrap()),
-                    &format!(
-                        "data:{};base64,{}",
-                        ctype,
-                        BASE64_STANDARD.encode(attachment.contents())
-                    ),
-                )
-            } else {
-                let filename = attachment.attachment_name().unwrap_or("未知");
-                attachments.push(Attachment {
-                    body: URL_SAFE.encode(attachment.contents()),
-                    filename: filename.to_string(),
-                });
-            }
-        }
-
-        if html.len() != 0 {
-            json["body_html"] = html.into();
-        }
-
-        if attachments.len() != 0 {
-            json["attachments"] = serde_json::to_value(&attachments)?;
-        }
+        let json = parser(mail_data)?;
 
         check_token_expires(
             user_token,
@@ -450,6 +482,7 @@ impl LarkMail {
             self.http_client.clone(),
         )
         .await?;
+
         let res = self
             .http_client
             .write()
@@ -460,7 +493,7 @@ impl LarkMail {
                 "Authorization",
                 "Bearer ".to_string() + &user_token.access_token,
             )
-            .body(json.to_string())
+            .body(json)
             .send()
             .await?;
 
