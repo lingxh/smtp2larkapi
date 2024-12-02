@@ -372,7 +372,12 @@ fn parser(mail_data: MailData) -> Result<String, anyhow::Error> {
                 ),
             )
         } else {
-            let filename = attachment.attachment_name().unwrap_or("未知");
+            let filename = if let Some(filename) = attachment.attachment_name() {
+                filename
+            } else {
+                attachment.content_id().unwrap_or("未知")
+            };
+            
             attachments.push(Attachment {
                 body: URL_SAFE.encode(attachment.contents()),
                 filename: filename.to_string(),
@@ -473,6 +478,7 @@ impl LarkMail {
     pub async fn send_mail(&mut self, mail_data: MailData) -> Result<(), anyhow::Error> {
         let user_token = &mut *self.user_token.write().await;
         let app_token = &mut *self.app_token.write().await;
+        let mail_from = mail_data.from.clone();
         let json = parser(mail_data)?;
 
         check_token_expires(
@@ -487,7 +493,7 @@ impl LarkMail {
             .http_client
             .write()
             .await
-            .post("https://open.larksuite.com/open-apis/mail/v1/user_mailboxes/me/messages/send")
+            .post(format!("https://open.larksuite.com/open-apis/mail/v1/user_mailboxes/{}/messages/send", mail_from))
             .header("Content-Type", "application/json; charset=utf-8")
             .header(
                 "Authorization",

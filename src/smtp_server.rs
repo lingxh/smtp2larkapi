@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use base64::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
@@ -8,7 +9,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tokio_rustls::{rustls, TlsAcceptor};
-
 pub struct Mail<S>
 where
     S: AsyncReadExt + AsyncWriteExt + Sync + Send + Unpin,
@@ -148,10 +148,26 @@ where
         }
         loop {
             let mut request = String::new();
-            timeout(Duration::from_secs(10), reader.read_line(&mut request)).await??;
+            match timeout(Duration::from_secs(10), reader.read_line(&mut request)).await? {
+                Ok(_) => {
+                    if cfg!(debug_assertions){
+                        print!("receive:  {}", &request);
+                    }
+                },
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                        return Ok(());
+                    }
+                    return Err(e.into());
+                }
+            }
             match self.scheduler(&request).await {
                 Ok(response) => {
                     if response.len() != 0 {
+                        if cfg!(debug_assertions){
+                            print!("send:  {}", response);
+                        }
+
                         reader.write_all(response.as_bytes()).await?;
                         if self.status.quit {
                             break;
@@ -216,7 +232,9 @@ where
             .find("<")
             .ok_or(anyhow!("500 Unable to parse content\r\n"))?
             + 1;
-        let right_index = request.len() - 3;
+        let right_index = request
+            .find(">")
+            .ok_or(anyhow!("500 Unable to parse content\r\n"))?;
         if right_index - left_index < 1 {
             return Err(anyhow!("500"));
         }
@@ -234,7 +252,9 @@ where
             .find("<")
             .ok_or(anyhow!("500 Unable to parse content\r\n"))?
             + 1;
-        let right_index = request.len() - 3;
+        let right_index = request
+            .find(">")
+            .ok_or(anyhow!("500 Unable to parse content\r\n"))?;
         if right_index - left_index < 1 {
             return Err(anyhow!("500"));
         }
