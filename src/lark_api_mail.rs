@@ -377,7 +377,7 @@ fn parser(mail_data: MailData) -> Result<String, anyhow::Error> {
             } else {
                 attachment.content_id().unwrap_or("未知")
             };
-            
+
             attachments.push(Attachment {
                 body: URL_SAFE.encode(attachment.contents()),
                 filename: filename.to_string(),
@@ -493,7 +493,10 @@ impl LarkMail {
             .http_client
             .write()
             .await
-            .post(format!("https://open.larksuite.com/open-apis/mail/v1/user_mailboxes/{}/messages/send", mail_from))
+            .post(format!(
+                "https://open.larksuite.com/open-apis/mail/v1/user_mailboxes/{}/messages/send",
+                mail_from
+            ))
             .header("Content-Type", "application/json; charset=utf-8")
             .header(
                 "Authorization",

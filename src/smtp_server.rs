@@ -135,6 +135,12 @@ where
         Ok(())
     }
 
+    fn check_mail(&self) -> bool {
+        self.mail_data.to.len() != 0
+            && self.mail_data.from.len() != 0
+            && self.mail_data.body.len() != 0
+    }
+
     async fn io<IO>(&mut self, mut reader: IO) -> Result<(), anyhow::Error>
     where
         IO: AsyncBufReadExt + AsyncWriteExt + Sync + Send + Unpin,
@@ -150,10 +156,10 @@ where
             let mut request = String::new();
             match timeout(Duration::from_secs(10), reader.read_line(&mut request)).await? {
                 Ok(_) => {
-                    if cfg!(debug_assertions){
+                    if cfg!(debug_assertions) {
                         print!("receive:  {}", &request);
                     }
-                },
+                }
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
                         return Ok(());
@@ -161,30 +167,36 @@ where
                     return Err(e.into());
                 }
             }
+
             match self.scheduler(&request).await {
                 Ok(response) => {
                     if response.len() != 0 {
-                        if cfg!(debug_assertions){
+                        if cfg!(debug_assertions) {
                             print!("send:  {}", response);
                         }
 
                         reader.write_all(response.as_bytes()).await?;
                         if self.status.quit {
-                            break;
+                            return Ok(());
                         }
                         if self.status.starttls {
                             self.status.starttls = false;
-                            break;
+                            return Ok(());
                         }
                     }
                 }
                 Err(e) => {
+                    if self.check_mail() {
+                        return Ok(());
+                    }
+                    if cfg!(debug_assertions) {
+                        print!("send:  {}", e.to_string());
+                    }
                     reader.write_all(e.to_string().as_bytes()).await?;
                     return Err(e);
                 }
             }
         }
-        Ok(())
     }
 
     async fn scheduler(&mut self, request: &str) -> Result<String, anyhow::Error> {
