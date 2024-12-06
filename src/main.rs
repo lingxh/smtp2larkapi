@@ -17,6 +17,7 @@ struct Tls {
 struct Config {
     user: String,
     passwd: String,
+    default_name: Option<String>,
     listener: String,
     host: String,
     safety: String,
@@ -51,6 +52,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mail_config = Arc::new(MailConfig {
         user: config.user.clone(),
         passwd: config.passwd.clone(),
+        default_name: config.default_name.unwrap_or_default(),
         tls_cert: tls_cert.clone(),
         tls_type: match config.safety.as_str() {
             "starttls" => Some(TlsType::STARTTLS),

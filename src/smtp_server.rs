@@ -26,7 +26,7 @@ where
 
 #[derive(Debug)]
 pub struct MailData {
-    pub from: String,
+    pub from: Addr,
     pub to: Vec<Addr>,
     pub subject: String,
     pub body: String,
@@ -42,6 +42,7 @@ pub struct MailConfig {
     pub user: String,
     pub passwd: String,
     pub host: String,
+    pub default_name: String,
     pub tls_type: Option<TlsType>,
     pub tls_cert: Option<Arc<rustls::ServerConfig>>,
 }
@@ -78,7 +79,10 @@ where
     pub fn new(stream: S, config: Arc<MailConfig>) -> Self {
         Mail {
             mail_data: MailData {
-                from: String::new(),
+                from: Addr {
+                    mail_address: "".to_string(),
+                    name: config.default_name.clone(),
+                },
                 to: Vec::new(),
                 subject: String::new(),
                 body: String::new(),
@@ -137,7 +141,7 @@ where
 
     fn check_mail(&self) -> bool {
         self.mail_data.to.len() != 0
-            && self.mail_data.from.len() != 0
+            && self.mail_data.from.mail_address.len() != 0
             && self.mail_data.body.len() != 0
     }
 
@@ -251,7 +255,7 @@ where
             return Err(anyhow!("500"));
         }
         let from = &request[left_index..right_index];
-        self.mail_data.from = from.to_string();
+        self.mail_data.from.mail_address = from.to_string();
 
         Ok("250 OK\r\n".to_string())
     }

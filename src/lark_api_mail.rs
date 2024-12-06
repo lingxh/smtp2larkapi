@@ -298,7 +298,7 @@ fn parser(mail_data: MailData) -> Result<String, anyhow::Error> {
     let mut name = String::new();
     if let Some(from) = message.from() {
         if let Some(from) = from.first() {
-            name = from.name().unwrap_or("").to_string();
+            name = from.name().unwrap_or(&mail_data.from.name).to_string();
         }
     }
     let mut cc = Vec::new();
@@ -495,7 +495,7 @@ impl LarkMail {
             .await
             .post(format!(
                 "https://open.larksuite.com/open-apis/mail/v1/user_mailboxes/{}/messages/send",
-                mail_from
+                mail_from.mail_address
             ))
             .header("Content-Type", "application/json; charset=utf-8")
             .header(
