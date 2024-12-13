@@ -144,7 +144,7 @@ Explanation of configuration items:
 `host`: SMTP server hostname  
 `user`: SMTP authentication username  
 `passwd`: SMTP authentication password  
-`default_name`: Optional, Sender's name
+`default_name`: Optional, Sender's name  
 `safety`: Encryption type, options are no, ssl, or starttls  
 `tls`: Optional, not required if safety is set to no  
 `cert`: TLS certificate  
