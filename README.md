@@ -52,7 +52,7 @@ cargo build --release
  `listener`     : 监听地址  
  `host`         : SMTP 服务器主机名  
  `user`         : SMTP 鉴权用户名  
- `default_name` : 选填，默认发件人名称
+ `default_name` : 选填，默认发件人名称  
  `passwd`       : SMTP 鉴权密码  
  `safety`       : 加密类型，可选择 no, ssl, starttls 三者之一  
  `tls`          : 选填，若 safety 配置为 no 则不需要填写  
@@ -144,7 +144,7 @@ Explanation of configuration items:
 `host`: SMTP server hostname  
 `user`: SMTP authentication username  
 `passwd`: SMTP authentication password  
-`default_name`: Optional, Sender's name
+`default_name`: Optional, Sender's name  
 `safety`: Encryption type, options are no, ssl, or starttls  
 `tls`: Optional, not required if safety is set to no  
 `cert`: TLS certificate  
