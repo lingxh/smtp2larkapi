@@ -158,14 +158,26 @@ where
         }
         loop {
             let mut request = String::new();
-            match timeout(Duration::from_secs(10), reader.read_line(&mut request)).await? {
+
+            let result =
+                match timeout(Duration::from_secs(10), reader.read_line(&mut request)).await {
+                    Ok(result) => result,
+                    Err(e) => {
+                        if self.check_mail() {
+                            return Ok(());
+                        }
+                        return Err(e.into());
+                    }
+                };
+
+            match result {
                 Ok(_) => {
                     if cfg!(debug_assertions) {
                         print!("receive:  {}", &request);
                     }
                 }
                 Err(e) => {
-                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                    if e.kind() == io::ErrorKind::UnexpectedEof && self.check_mail() {
                         return Ok(());
                     }
                     return Err(e.into());

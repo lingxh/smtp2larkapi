@@ -3,8 +3,9 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::{Deserialize, Serialize};
 use smtp2larkapi::tools::*;
-use smtp2larkapi::{lark_api_mail, smtp_server::*};
+use smtp2larkapi::{lark_api_mail::LarkMail, smtp_server::*};
 use std::sync::Arc;
+use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
 #[derive(Deserialize, Serialize)]
@@ -62,45 +63,59 @@ async fn main() -> Result<(), anyhow::Error> {
         host: config.host.clone(),
     });
 
-    let lark = lark_api_mail::LarkMail::new().await?;
+    let lark = LarkMail::new().await?;
     let lark = Arc::new(RwLock::new(lark));
 
     loop {
-        let lark = lark.clone();
+        let lark: Arc<RwLock<LarkMail>> = lark.clone();
         let mail_config = mail_config.clone();
-        let (mut stream, _) = listener.accept().await?;
+        let (stream, _) = listener.accept().await?;
+        
+        tokio::spawn(handle(lark, mail_config, stream));
+    }
+}
 
-        tokio::spawn(async move {
-            let mut mail = Mail::new(&mut stream, mail_config);
-            match mail.run().await {
-                Ok(_) => {
-                    let Mail { mail_data, .. } = mail;
-                    let mail_to = mail_data.to.clone();
-                    println!(
-                        "{}  Received an email request to send: {:?}",
-                        Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
-                        &mail_to.iter().map(|x| x.mail_address.clone()).collect::<Vec<_>>()
-                    );
-                    match lark.write().await.send_mail(mail_data).await {
-                        Ok(_) => println!(
-                            "{}  to: {:?} send success",
-                            Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
-                            &mail_to.iter().map(|x| x.mail_address.clone()).collect::<Vec<_>>()
-                        ),
-                        Err(e) => println!(
-                            "{}  to:{:?}  {}",
-                            Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
-                            &mail_to.iter().map(|x| x.mail_address.clone()).collect::<Vec<_>>(),
-                            e.to_string()
-                        ),
-                    };
-                }
-                Err(e) => println!(
-                    "{} Error: {}",
-                    Local::now().format("%Y/%m/%d %H:%M:%S").to_string().trim_end(),
-                    e
+async fn handle(lark: Arc<RwLock<LarkMail>>, mail_config: Arc<MailConfig>, mut stream: TcpStream) {
+    let mut mail = Mail::new(&mut stream, mail_config);
+    match mail.run().await {
+        Ok(_) => {
+            let Mail { mail_data, .. } = mail;
+            let mail_to = mail_data.to.clone();
+            println!(
+                "{}  Received an email request to send: {:?}",
+                Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                &mail_to
+                    .iter()
+                    .map(|x| x.mail_address.clone())
+                    .collect::<Vec<_>>()
+            );
+            match lark.write().await.send_mail(mail_data).await {
+                Ok(_) => println!(
+                    "{}  to: {:?} send success",
+                    Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                    &mail_to
+                        .iter()
+                        .map(|x| x.mail_address.clone())
+                        .collect::<Vec<_>>()
                 ),
-            }
-        });
+                Err(e) => println!(
+                    "{}  to:{:?}  {}",
+                    Local::now().format("%Y/%m/%d %H:%M:%S").to_string(),
+                    &mail_to
+                        .iter()
+                        .map(|x| x.mail_address.clone())
+                        .collect::<Vec<_>>(),
+                    e.to_string()
+                ),
+            };
+        }
+        Err(e) => println!(
+            "{} Error: {}",
+            Local::now()
+                .format("%Y/%m/%d %H:%M:%S")
+                .to_string()
+                .trim_end(),
+            e
+        ),
     }
 }
